@@ -277,6 +277,22 @@ _.register($.Class({
 	constructor: function() {
 		this.permissions.on(["read", "edit", "save"]);
 		this.key = this.mavo.id;
+
+		window.addEventListener("storage", e => {
+			if (e.key !== this.key) {
+				return;
+			}
+
+			var newValue;
+
+			try {
+				newValue = JSON.parse(e.newValue);
+			} catch (e) {
+				newValue = {};
+			}
+
+			this.mavo.render(newValue);
+		});
 	},
 
 	get: function() {
