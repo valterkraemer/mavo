@@ -300,6 +300,10 @@ _.register($.Class({
 	},
 
 	put: function(serialized) {
+		if (!this.mavo.unsavedChanges) {
+			return Promise.resolve(serialized);
+		}
+		
 		if (!serialized) {
 			delete localStorage[this.key];
 		}
