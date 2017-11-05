@@ -17,6 +17,7 @@ e(i||t.selectors.base).forEach(function(e){t.resize(e)})},active:!0,resizes:func
 var _ = self.Mavo = $.Class({
 	constructor: function (element) {
 		this.treeBuilt = Mavo.defer();
+		this.dataLoaded = Mavo.defer();
 
 		this.element = element;
 
@@ -213,6 +214,7 @@ var _ = self.Mavo = $.Class({
 		else {
 			// No storage or source
 			requestAnimationFrame(() => {
+				this.dataLoaded.resolve();
 				$.fire(this.element, "mavo:load");
 			});
 		}
@@ -246,31 +248,27 @@ var _ = self.Mavo = $.Class({
 			});
 		}
 
-		this.permissions.can("save", () => {
-			if (this.autoSave) {
-				this.element.addEventListener("mavo:load.mavo:autosave", evt => {
-					var debouncedSave = _.debounce(() => {
-						this.save();
-					}, this.autoSaveDelay);
+		if (this.autoSave) {
+			this.dataLoaded.then(evt => {
+				var debouncedSave = _.debounce(() => {
+					this.save();
+				}, this.autoSaveDelay);
 
-					var callback = evt => {
-						if (evt.node.saved) {
-							debouncedSave();
-						}
-					};
+				var callback = evt => {
+					if (evt.node.saved) {
+						debouncedSave();
+					}
+				};
 
-					requestAnimationFrame(() => {
-						this.permissions.can("save", () => {
-							this.element.addEventListener("mavo:datachange.mavo:autosave", callback);
-						}, () => {
-							this.element.removeEventListener("mavo:datachange.mavo:autosave", callback);
-						});
+				requestAnimationFrame(() => {
+					this.permissions.can("save", () => {
+						this.element.addEventListener("mavo:datachange.mavo:autosave", callback);
+					}, () => {
+						this.element.removeEventListener("mavo:datachange.mavo:autosave", callback);
 					});
 				});
-			}
-		}, () => {
-			$.unbind(this.element, ".mavo:save .mavo:autosave");
-		});
+			});
+		}
 
 		// Keyboard navigation
 		this.element.addEventListener("keydown", evt => {
@@ -515,6 +513,7 @@ var _ = self.Mavo = $.Class({
 		.then(() => {
 			this.inProgress = false;
 			requestAnimationFrame(() => {
+				this.dataLoaded.resolve();
 				$.fire(this.element, "mavo:load");
 			});
 		});
@@ -578,8 +577,8 @@ var _ = self.Mavo = $.Class({
 		});
 	},
 
-	walk: function(callback) {
-		return this.root.walk(callback);
+	walk: function() {
+		return this.root.walk(...arguments);
 	},
 
 	calculateNeedsEdit: function(test) {
@@ -1270,6 +1269,7 @@ var _ = $.extend(Mavo, {
 
 		return function () {
 			var context = this, args = arguments;
+
 			code = function () {
 				fn.apply(context, args);
 				removeEventListener("beforeunload", code);
@@ -1643,6 +1643,7 @@ Mavo.Locale.register("en", {
 	"logged-in-as": "Logged in to {id} as ",
 	"login-to": "Login to {id}",
 	"error-uploading": "Error uploading file",
+	"cannot-load-uploaded-file": "Cannot load uploaded file",
 	"problem-saving": "Problem saving data",
 	"http-error": "HTTP error {status}: {statusText}",
 	"cant-connect": "Can’t connect to the Internet",
@@ -2023,6 +2024,9 @@ var _ = Mavo.UI.Bar = $.Class({
 					if (this.editing) {
 						this.done();
 					}
+				},
+				condition: function() {
+					return this.needsEdit;
 				}
 			},
 
@@ -2077,7 +2081,7 @@ var _ = Mavo.UI.Message = $.Class({
 			events: {
 				click: e => Mavo.scrollIntoViewIfNeeded(this.mavo.element)
 			},
-			after: this.mavo.bar.element
+			[this.mavo.bar? "after" : "start"]: (this.mavo.bar || this.mavo).element
 		});
 
 		if (o.classes) {
@@ -2095,6 +2099,7 @@ var _ = Mavo.UI.Message = $.Class({
 
 		if (typeof o.dismiss == "string" || Array.isArray(o.dismiss)) {
 			var dismiss = {};
+
 			for (let prop of Mavo.toArray(o.dismiss)) {
 				dismiss[prop] = true;
 			}
@@ -3084,6 +3089,7 @@ var _ = Mavo.Node = $.Class({
 		if (this.nodeType != "Collection" && Array.isArray(data)) {
 			// We are rendering an array on a singleton, what to do?
 			var properties;
+
 			if (this.isRoot && (properties = Object.keys(this.children)).length === 1 && this.children[properties[0]].nodeType === "Collection") {
 				// If it's root with only one collection property, render on that property
 				env.data = {
@@ -3165,7 +3171,7 @@ var _ = Mavo.Node = $.Class({
 
 				if (property in group.children) {
 					return group.children[property];
-				};
+				}
 			});
 		}
 
@@ -3743,11 +3749,31 @@ var _ = Mavo.Group = $.Class({
 			this.data = Mavo.subset(this.data, this.inPath, data);
 		}
 
+		var copy; // to handle renaming
+
 		this.propagate(obj => {
 			var propertyData = data[obj.property];
-			var renderData = propertyData === undefined && obj.alias ? data[obj.alias] : propertyData;
-			obj.render(renderData);
+
+			if (obj.alias && data[obj.alias] !== undefined) {
+				copy = copy || $.extend({}, data);
+				propertyData = data[obj.alias];
+			}
+
+			obj.render(propertyData);
 		});
+
+		// Rename properties. This needs to be done separately to handle swapping.
+		if (copy) {
+			this.propagate(obj => {
+				if (obj.alias) {
+					data[obj.property] = copy[obj.alias];
+
+					if (!(obj.alias in this.children)) {
+						delete data[obj.alias];
+					}
+				}
+			});
+		}
 
 		if (!wasPrimitive) {
 			// Fire datachange events for properties not in the template,
@@ -4631,11 +4657,11 @@ var _ = Mavo.UI.Popup = $.Class({
 
 			if (this.element.offsetHeight) {
 				// Is in the DOM, check if it fits
-				var popupBounds = this.element.getBoundingClientRect();
+				this.height = this.element.getBoundingClientRect().height || this.height;
+			}
 
-				if (popupBounds.height + y > innerHeight) {
-					y = innerHeight - popupBounds.height - 20;
-				}
+			if (this.height + y > innerHeight) {
+				y = innerHeight - this.height - 20;
 			}
 
 			$.style(this.element, { top:  `${y}px`, left: `${x}px` });
@@ -4686,11 +4712,19 @@ var _ = Mavo.UI.Popup = $.Class({
 			}
 		};
 
+		this.element.style.transition = "none";
+		this.element.removeAttribute("hidden");
+
 		this.position();
+
+		this.element.setAttribute("hidden", "");
+		this.element.style.transition = "";
 
 		document.body.appendChild(this.element);
 
-		requestAnimationFrame(e => this.element.removeAttribute("hidden")); // trigger transition
+		setTimeout(() => {
+			this.element.removeAttribute("hidden");
+		}, 100); // trigger transition. rAF or timeouts < 100 don't seem to, oddly.
 
 		$.events(document, "focus click", this.hideCallback, true);
 		window.addEventListener("scroll", this.position);
@@ -4834,6 +4868,7 @@ Object.defineProperties(_, {
 
 				// Passes selector test?
 				var selector = o.selector || id;
+
 				if (!element.matches(selector)) {
 					continue;
 				}
@@ -4892,8 +4927,6 @@ _.register({
 		selector: "img, video, audio",
 		attribute: "src",
 		editor: function() {
-			var uploadBackend = this.mavo.storage && this.mavo.storage.upload? this.mavo.storage : this.uploadBackend;
-
 			var mainInput = $.create("input", {
 				"type": "url",
 				"placeholder": "http://example.com/image.png",
@@ -4901,35 +4934,57 @@ _.register({
 				"aria-label": "URL to image"
 			});
 
-			if (uploadBackend && self.FileReader) {
+			if (this.mavo.uploadBackend && self.FileReader) {
 				var popup;
 				var type = this.element.nodeName.toLowerCase();
 				type = type == "img"? "image" : type;
 				var path = this.element.getAttribute("mv-uploads") || type + "s";
 
 				var upload = (file, name = file.name) => {
-					if (file && file.type.indexOf(type + "/") === 0) {
-						this.mavo.upload(file, path + "/" + name).then(url => {
-							mainInput.value = url;
-
-							var attempts = 0;
-
-							var checkIfLoaded = Mavo.rr(() => {
-								return $.fetch(url + "?" + Date.now())
-									.then(() => {
-										this.mavo.inProgress = false;
-										$.fire(mainInput, "input");
-									})
-									.catch(xhr => {
-										if (xhr.status > 400 && attempts < 10) {
-											this.mavo.inProgress = "Loading Image";
-											attempts++;
-											return Mavo.timeout(2000).then(checkIfLoaded);
-										}
-									});
-							});
-						});
+					if (!file || file.type.indexOf(type + "/") !== 0) {
+						return;
 					}
+
+					var tempURL = URL.createObjectURL(file);
+
+					this.sneak(() => this.element.src = tempURL);
+
+					this.mavo.upload(file, path + "/" + name).then(url => {
+						// Backend claims image is uploaded, we should load it from remote to make sure everything went well
+						var attempts = 0;
+						var load = Mavo.rr(() => Mavo.timeout(1000 + attempts * 500).then(() => {
+							attempts++;
+							this.element.src = url;
+						}));
+						var cleanup = () => {
+							URL.revokeObjectURL(tempURL);
+							this.element.removeEventListener("load", onload);
+							this.element.removeEventListener("error", onload);
+						};
+						var onload = evt => {
+							if (this.element.src != tempURL) {
+								// Actual uploaded image has loaded, yay!
+								this.element.src = url;
+								cleanup();
+							}
+						};
+						var onerror = evt => {
+							// Oops, failed. Put back temp URL and try again
+							if (attempts <= 10) {
+								this.sneak(() => this.element.src = tempURL);
+								load();
+							}
+							else {
+								// 11 + 0.5*10*11/2 = 38.5 seconds later, giving up
+								this.mavo.error(this.mavo._("cannot-load-uploaded-file") + " " + url);
+								cleanup();
+							}
+						};
+
+						mainInput.value = url;
+						this.element.addEventListener("load", onload);
+						this.element.addEventListener("error", onerror);
+					});
 				};
 
 				var uploadEvents = {
@@ -5840,6 +5895,7 @@ var _ = Mavo.Collection = $.Class({
 			}
 
 			var order = this.templateElement.getAttribute("mv-order");
+			
 			if (order !== null) {
 				// Attribute has the highest priority and overrides any heuristics
 				return /^desc\b/i.test(order);
@@ -6443,6 +6499,7 @@ var _ = Mavo.DOMExpression = $.Class({
 					if (env.value instanceof Error) {
 						return this.fallback !== undefined? this.fallback : this.syntax.start + env.expr.expression + this.syntax.end;
 					}
+
 					if (env.value === undefined || env.value === null) {
 						// Don’t print things like "undefined" or "null"
 						return "";
@@ -6483,8 +6540,6 @@ var _ = Mavo.DOMExpression = $.Class({
 			this.primitive.value = value;
 		}
 		else if (this.mavoNode) {
-			//value = value.value || value;
-
 			this.mavoNode.render(value);
 		}
 		else {
@@ -7270,6 +7325,7 @@ var _ = Mavo.Functions = {
 				date = date.replace(/\s+/g, "");
 
 				var timezone = Mavo.match(date, /[+-]\d{2}:?\d{2}|Z$/);
+
 				if (timezone) {
 					// parse as ISO format
 					date = new Date(date);
