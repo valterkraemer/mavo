@@ -128,7 +128,7 @@ var _ = self.Mavo = $.Class({
 		});
 
 		// Update login status
-		this.element.addEventListener("mavo:login.mavo", evt => {
+		this.element.addEventListener("mv-login.mavo", evt => {
 			if (evt.backend == (this.source || this.storage)) {
 				// If last time we rendered we got nothing, maybe now we'll have better luck?
 				if (!this.root.data && !this.unsavedChanges) {
@@ -215,13 +215,13 @@ var _ = self.Mavo = $.Class({
 			// No storage or source
 			requestAnimationFrame(() => {
 				this.dataLoaded.resolve();
-				$.fire(this.element, "mavo:load");
+				$.fire(this.element, "mv-load");
 			});
 		}
 
 		// Dynamic ids
 		if (location.hash) {
-			this.element.addEventListener("mavo:load.mavo", evt => {
+			this.element.addEventListener("mv-load.mavo", evt => {
 				var callback = records => {
 					var target = document.getElementById(location.hash.slice(1));
 
@@ -262,9 +262,9 @@ var _ = self.Mavo = $.Class({
 
 				requestAnimationFrame(() => {
 					this.permissions.can("save", () => {
-						this.element.addEventListener("mavo:datachange.mavo:autosave", callback);
+						this.element.addEventListener("mv-change.mavo:autosave", callback);
 					}, () => {
-						this.element.removeEventListener("mavo:datachange.mavo:autosave", callback);
+						this.element.removeEventListener("mv-change.mavo:autosave", callback);
 					});
 				});
 			});
@@ -514,7 +514,7 @@ var _ = self.Mavo = $.Class({
 			this.inProgress = false;
 			requestAnimationFrame(() => {
 				this.dataLoaded.resolve();
-				$.fire(this.element, "mavo:load");
+				$.fire(this.element, "mv-load");
 			});
 		});
 	},
@@ -568,7 +568,7 @@ var _ = self.Mavo = $.Class({
 	save: function() {
 		return this.store().then(saved => {
 			if (saved) {
-				$.fire(this.element, "mavo:save", saved);
+				$.fire(this.element, "mv-save", saved);
 
 				this.lastSaved = Date.now();
 				this.root.save();
@@ -1109,7 +1109,7 @@ var _ = $.extend(Mavo, {
 			var observer = _.inView.observer = _.inView.observer || new IntersectionObserver(function(entries) {
 				for (var entry of entries) {
 					this.unobserve(entry.target);
-					$.fire(entry.target, "mavo:inview", {entry});
+					$.fire(entry.target, "mv-inview", {entry});
 				}
 			});
 
@@ -1121,12 +1121,12 @@ var _ = $.extend(Mavo, {
 				observer.observe(element);
 
 				var callback = evt => {
-					element.removeEventListener("mavo:inview", callback);
+					element.removeEventListener("mv-inview", callback);
 					evt.stopPropagation();
 					resolve();
 				};
 
-				element.addEventListener("mavo:inview", callback);
+				element.addEventListener("mv-inview", callback);
 			});
 		}
 	},
@@ -2580,7 +2580,7 @@ var _ = Mavo.Backend = $.Class({
 
 			this.permissions.off(["edit", "add", "delete", "save"]).on("login");
 
-			this.mavo.element._.fire("mavo:logout", {backend: this});
+			this.mavo.element._.fire("mv-logout", {backend: this});
 		}
 
 		return Promise.resolve();
@@ -3030,6 +3030,11 @@ var _ = Mavo.Node = $.Class({
 			return false;
 		}
 
+		$.fire(this.element, "mv-edit", {
+			mavo: this.mavo,
+			node: this
+		});
+
 		Mavo.hooks.run("node-edit-end", this);
 	},
 
@@ -3041,6 +3046,11 @@ var _ = Mavo.Node = $.Class({
 		}
 
 		$.unbind(this.element, ".mavo:edit");
+
+		$.fire(this.element, "mv-done", {
+			mavo: this.mavo,
+			node: this
+		});
 
 		this.propagate("done");
 
@@ -3118,7 +3128,7 @@ var _ = Mavo.Node = $.Class({
 	},
 
 	dataChanged: function(action, o = {}) {
-		$.fire(o.element || this.element, "mavo:datachange", $.extend({
+		$.fire(o.element || this.element, "mv-change", $.extend({
 			property: this.property,
 			action,
 			mavo: this.mavo,
@@ -3955,14 +3965,16 @@ var _ = Mavo.Primitive = $.Class({
 			Mavo.setAttributeShy(this.element, "mv-attribute", "none");
 		}
 
-		// Observe future mutations to this property, if possible
-		// Properties like input.checked or input.value cannot be observed that way
-		// so we cannot depend on mutation observers for everything :(
-		this.observer = new Mavo.Observer(this.element, this.attribute, records => {
-			if (this.attribute || !this.editing || this.config.subtree) {
-				this.value = this.getValue();
-			}
-		}, {subtree: this.config.subtree, childList: this.config.subtree});
+		if (this.config.observer !== false) {
+			// Observe future mutations to this property, if possible
+			// Properties like input.checked or input.value cannot be observed that way
+			// so we cannot depend on mutation observers for everything :(
+			this.observer = new Mavo.Observer(this.element, this.attribute, records => {
+				if (this.observer.running && (this.attribute || !this.editing || this.config.subtree)) {
+					this.value = this.getValue();
+				}
+			}, {subtree: this.config.subtree, childList: this.config.subtree});
+		}
 
 		this.postInit();
 
@@ -4087,7 +4099,7 @@ var _ = Mavo.Primitive = $.Class({
 			"focus": evt => {
 				this.editor.select && this.editor.select();
 			},
-			"mavo:datachange": evt => {
+			"mv-change": evt => {
 				if (evt.property === "output") {
 					evt.stopPropagation();
 					$.fire(this.editor, "input");
@@ -4275,7 +4287,7 @@ var _ = Mavo.Primitive = $.Class({
 
 		if (data === undefined) {
 			// New property has been added to the schema and nobody has saved since
-			if (this.modes !== "read") {
+			if (!this.modes) {
 				this.value = this.closestCollection? this.default : this.templateValue;
 			}
 		}
@@ -5115,10 +5127,10 @@ _.register({
 				});
 
 				requestAnimationFrame(() => {
-					$.events(element, "input mavo:datachange", function handler() {
+					$.events(element, "input mv-change", function handler() {
 						observer.destroy();
 						Mavo.data(element, "boundObserver", undefined);
-						$.unbind(element, "input mavo:datachange", handler);
+						$.unbind(element, "input mv-change", handler);
 					});
 				});
 
@@ -5289,7 +5301,6 @@ _.register({
 		init: function() {
 			if (!this.fromTemplate("dateType")) {
 				var dateFormat = Mavo.DOMExpression.search(this.element, null);
-
 				var datetime = this.element.getAttribute("datetime") || "YYYY-MM-DD";
 
 				for (var type in this.config.dateTypes) {
@@ -5308,16 +5319,18 @@ _.register({
 			}
 		},
 		dateTypes: {
-			"date": /^[Y\d]{4}-[M\d]{2}-[D\d]{2}$/i,
 			"month": /^[Y\d]{4}-[M\d]{2}$/i,
 			"time": /^[H\d]{2}:[M\d]{2}/i,
-			"datetime-local": /^[Y\d]{4}-[M\d]{2}-[D\d]{2} [H\d]{2}:[M\d]{2}/i
+			"datetime-local": /^[Y\d]{4}-[M\d]{2}-[D\d]{2} [H\d]{2}:[Mi\d]{2}/i,
+			"date": /^[Y\d]{4}-[M\d]{2}-[D\d]{2}$/i,
 		},
 		defaultFormats: {
-			"date": property => `[day(${property})] [month(${property}).shortname] [year(${property})]`,
-			"month": property => `[month(${property}).name] [year(${property})]`,
-			"time": property => `[hour(${property}).twodigit]:[minute(${property}).twodigit]`,
-			"datetime-local": property => `[day(${property})] [month(${property}).shortname] [year(${property})]`
+			"date": name => `[day(${name})] [month(${name}).shortname] [year(${name})]`,
+			"month": name => `[month(${name}).name] [year(${name})]`,
+			"time": name => `[hour(${name}).twodigit]:[minute(${name}).twodigit]`,
+			"datetime-local": function(name) {
+				return this.date(name) + " " + this.time(name);
+			}
 		},
 		editor: function() {
 			return {tag: "input", type: this.dateType};
@@ -6707,7 +6720,7 @@ var _ = Mavo.Expressions = $.Class({
 			this.expressions = [];
 
 			// Watch changes and update value
-			document.documentElement.addEventListener("mavo:datachange", evt => {
+			document.documentElement.addEventListener("mv-change", evt => {
 				if (!this.active) {
 					return;
 				}
@@ -6774,13 +6787,13 @@ var _ = Mavo.Expressions = $.Class({
 			return;
 		}
 
-		if (path === undefined) {
-			path = Mavo.elementPath(node.closest(Mavo.selectors.item), node);
-		}
-
-		if ((attribute && _.directives.indexOf(attribute.name) > -1) ||
-		    syntax.test(attribute? attribute.value : node.textContent)
+		if (attribute && _.directives.indexOf(attribute.name) > -1 ||
+		    syntax !== Mavo.Expression.Syntax.ESCAPE && syntax.test(attribute? attribute.value : node.textContent)
 		) {
+			if (path === undefined) {
+				path = Mavo.elementPath(node.closest(Mavo.selectors.item), node);
+			}
+
 			this.expressions.push(new Mavo.DOMExpression({
 				node, syntax, path,
 				attribute: attribute && attribute.name,
@@ -6805,10 +6818,6 @@ var _ = Mavo.Expressions = $.Class({
 			node.normalize();
 
 			syntax = Mavo.Expression.Syntax.create(node) || syntax;
-
-			if (syntax === Mavo.Expression.Syntax.ESCAPE) {
-				return;
-			}
 
 			if (Mavo.is("item", node)) {
 				path = [];
@@ -6877,7 +6886,7 @@ Mavo.Expressions.directive("mv-if", {
 					// When the element is detached, datachange events from properties
 					// do not propagate up to the group so expressions do not recalculate.
 					// We must do this manually.
-					this.element.addEventListener("mavo:datachange", evt => {
+					this.element.addEventListener("mv-change", evt => {
 						// Cannot redispatch synchronously [why??]
 						requestAnimationFrame(() => {
 							if (!this.element.parentNode) { // out of the DOM?
@@ -7246,6 +7255,8 @@ var _ = Mavo.Functions = {
 		return new Date();
 	},
 
+	$startup: new Date(), // Like $now, but doesn't update
+
 	get $today() {
 		return _.date(new Date());
 	},
@@ -7260,18 +7271,22 @@ var _ = Mavo.Functions = {
 	ms: getDateComponent("ms"),
 
 	date: date => {
-		return `${_.year(date)}-${_.month(date).twodigit}-${_.day(date).twodigit}`;
+		date = $u.date(date);
+
+		return date? `${_.year(date)}-${_.month(date).twodigit}-${_.day(date).twodigit}` : "";
 	},
 	time: date => {
-		return `${_.hour(date).twodigit}:${_.minute(date).twodigit}:${_.second(date).twodigit}`;
+		date = $u.date(date);
+
+		return date? `${_.hour(date).twodigit}:${_.minute(date).twodigit}:${_.second(date).twodigit}` : "";
 	},
 
-	minutes: seconds => Math.floor(Math.abs(seconds) / 60),
-	hours: seconds => Math.floor(Math.abs(seconds) / 3600),
-	days: seconds => Math.floor(Math.abs(seconds) / 86400),
-	weeks: seconds => Math.floor(Math.abs(seconds) / 604800),
-	months: seconds => Math.floor(Math.abs(seconds) / (30.4368 * 86400)),
-	years: seconds => Math.floor(Math.abs(seconds) / (30.4368 * 86400 * 12)),
+	minutes: seconds => Math.floor(Math.abs(seconds) / 60) || 0,
+	hours: seconds => Math.floor(Math.abs(seconds) / 3600) || 0,
+	days: seconds => Math.floor(Math.abs(seconds) / 86400) || 0,
+	weeks: seconds => Math.floor(Math.abs(seconds) / 604800) || 0,
+	months: seconds => Math.floor(Math.abs(seconds) / (30.4368 * 86400)) || 0,
+	years: seconds => Math.floor(Math.abs(seconds) / (30.4368 * 86400 * 12)) || 0,
 
 	localTimezone: -(new Date()).getTimezoneOffset(),
 
@@ -7296,6 +7311,41 @@ var _ = Mavo.Functions = {
 			return array.filter(number => !isNaN(number) && val(number) !== "").map(n => +n);
 		},
 
+		fixDateString: function(date) {
+			date = date.trim();
+
+			var hasDate = /^\d{4}-\d{2}(-\d{2})?/.test(date);
+			var hasTime = date.indexOf(":") > -1;
+
+			if (!hasDate && !hasTime) {
+				return null;
+			}
+
+			// Fix up time format
+			if (!hasDate) {
+				// No date, add today’s
+				date = _.$today + " " + date;
+			}
+			else {
+				// Only year-month, add day
+				date = date.replace(/^(\d{4}-\d{2})(?!-\d{2})/, "$1-01");
+			}
+
+			if (!hasTime) {
+				// Add a time if one doesn't exist
+				date += "T00:00:00";
+			}
+			else {
+				// Make sure time starts with T, due to Safari bug
+				date = date.replace(/\-(\d{2})\s+(?=\d{2}:)/, "-$1T");
+			}
+
+			// Remove all whitespace
+			date = date.replace(/\s+/g, "");
+
+			return date;
+		},
+
 		date: function(date) {
 			date = val(date);
 
@@ -7304,25 +7354,11 @@ var _ = Mavo.Functions = {
 			}
 
 			if ($.type(date) === "string") {
-				date = date.trim();
+				date = $u.fixDateString(date);
 
-				// Fix up time format
-				if (!/^\d{4}-\d{2}-\d{2}/.test(date)) {
-					// No date, add today’s
-					date = _.$today + " " + date;
+				if (date === null) {
+					return null;
 				}
-
-				if (date.indexOf(":") === -1) {
-					// Add a time if one doesn't exist
-					date += "T00:00:00";
-				}
-				else {
-					// Make sure time starts with T, due to Safari bug
-					date = date.replace(/\-(\d{2})\s+(?=\d{2}:)/, "-$1T");
-				}
-
-				// Remove all whitespace
-				date = date.replace(/\s+/g, "");
 
 				var timezone = Mavo.match(date, /[+-]\d{2}:?\d{2}|Z$/);
 
@@ -8247,7 +8283,7 @@ var _ = Mavo.Backend.register($.Class({
 				info
 			};
 
-			$.fire(this.mavo.element, "mavo:login", { backend: this });
+			$.fire(this.mavo.element, "mv-login", { backend: this });
 		});
 	},
 

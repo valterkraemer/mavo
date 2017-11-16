@@ -201,7 +201,7 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 			});
 
 			// Update login status
-			this.element.addEventListener("mavo:login.mavo", function (evt) {
+			this.element.addEventListener("mv-login.mavo", function (evt) {
 				if (evt.backend == (_this.source || _this.storage)) {
 					// If last time we rendered we got nothing, maybe now we'll have better luck?
 					if (!_this.root.data && !_this.unsavedChanges) {
@@ -337,13 +337,13 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 				// No storage or source
 				requestAnimationFrame(function () {
 					_this.dataLoaded.resolve();
-					$.fire(_this.element, "mavo:load");
+					$.fire(_this.element, "mv-load");
 				});
 			}
 
 			// Dynamic ids
 			if (location.hash) {
-				this.element.addEventListener("mavo:load.mavo", function (evt) {
+				this.element.addEventListener("mv-load.mavo", function (evt) {
 					var callback = function callback(records) {
 						var target = document.getElementById(location.hash.slice(1));
 
@@ -385,9 +385,9 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 
 					requestAnimationFrame(function () {
 						_this.permissions.can("save", function () {
-							_this.element.addEventListener("mavo:datachange.mavo:autosave", callback);
+							_this.element.addEventListener("mv-change.mavo:autosave", callback);
 						}, function () {
-							_this.element.removeEventListener("mavo:datachange.mavo:autosave", callback);
+							_this.element.removeEventListener("mv-change.mavo:autosave", callback);
 						});
 					});
 				});
@@ -651,7 +651,7 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 				_this3.inProgress = false;
 				requestAnimationFrame(function () {
 					_this3.dataLoaded.resolve();
-					$.fire(_this3.element, "mavo:load");
+					$.fire(_this3.element, "mv-load");
 				});
 			});
 		},
@@ -709,7 +709,7 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 
 			return this.store().then(function (saved) {
 				if (saved) {
-					$.fire(_this6.element, "mavo:save", saved);
+					$.fire(_this6.element, "mv-save", saved);
 
 					_this6.lastSaved = Date.now();
 					_this6.root.save();
@@ -1317,7 +1317,7 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 							var entry = _step2.value;
 
 							this.unobserve(entry.target);
-							$.fire(entry.target, "mavo:inview", { entry: entry });
+							$.fire(entry.target, "mv-inview", { entry: entry });
 						}
 					} catch (err) {
 						_didIteratorError2 = true;
@@ -1343,12 +1343,12 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 					observer.observe(element);
 
 					var callback = function callback(evt) {
-						element.removeEventListener("mavo:inview", callback);
+						element.removeEventListener("mv-inview", callback);
 						evt.stopPropagation();
 						resolve();
 					};
 
-					element.addEventListener("mavo:inview", callback);
+					element.addEventListener("mv-inview", callback);
 				});
 			}
 		},
@@ -3165,7 +3165,7 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 
 				this.permissions.off(["edit", "add", "delete", "save"]).on("login");
 
-				this.mavo.element._.fire("mavo:logout", { backend: this });
+				this.mavo.element._.fire("mv-logout", { backend: this });
 			}
 
 			return Promise.resolve();
@@ -3681,6 +3681,11 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 				return false;
 			}
 
+			$.fire(this.element, "mv-edit", {
+				mavo: this.mavo,
+				node: this
+			});
+
 			Mavo.hooks.run("node-edit-end", this);
 		},
 
@@ -3692,6 +3697,11 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 			}
 
 			$.unbind(this.element, ".mavo:edit");
+
+			$.fire(this.element, "mv-done", {
+				mavo: this.mavo,
+				node: this
+			});
 
 			this.propagate("done");
 
@@ -3791,7 +3801,7 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 		dataChanged: function dataChanged(action) {
 			var o = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
 
-			$.fire(o.element || this.element, "mavo:datachange", $.extend({
+			$.fire(o.element || this.element, "mv-change", $.extend({
 				property: this.property,
 				action: action,
 				mavo: this.mavo,
@@ -4705,14 +4715,16 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 				Mavo.setAttributeShy(this.element, "mv-attribute", "none");
 			}
 
-			// Observe future mutations to this property, if possible
-			// Properties like input.checked or input.value cannot be observed that way
-			// so we cannot depend on mutation observers for everything :(
-			this.observer = new Mavo.Observer(this.element, this.attribute, function (records) {
-				if (_this.attribute || !_this.editing || _this.config.subtree) {
-					_this.value = _this.getValue();
-				}
-			}, { subtree: this.config.subtree, childList: this.config.subtree });
+			if (this.config.observer !== false) {
+				// Observe future mutations to this property, if possible
+				// Properties like input.checked or input.value cannot be observed that way
+				// so we cannot depend on mutation observers for everything :(
+				this.observer = new Mavo.Observer(this.element, this.attribute, function (records) {
+					if (_this.observer.running && (_this.attribute || !_this.editing || _this.config.subtree)) {
+						_this.value = _this.getValue();
+					}
+				}, { subtree: this.config.subtree, childList: this.config.subtree });
+			}
 
 			this.postInit();
 
@@ -4837,7 +4849,7 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 				"focus": function focus(evt) {
 					_this2.editor.select && _this2.editor.select();
 				},
-				"mavo:datachange": function mavoDatachange(evt) {
+				"mv-change": function mvChange(evt) {
 					if (evt.property === "output") {
 						evt.stopPropagation();
 						$.fire(_this2.editor, "input");
@@ -5041,7 +5053,7 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 
 			if (data === undefined) {
 				// New property has been added to the schema and nobody has saved since
-				if (this.modes !== "read") {
+				if (!this.modes) {
 					this.value = this.closestCollection ? this.default : this.templateValue;
 				}
 			} else {
@@ -5936,10 +5948,10 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
 					});
 
 					requestAnimationFrame(function () {
-						$.events(element, "input mavo:datachange", function handler() {
+						$.events(element, "input mv-change", function handler() {
 							observer.destroy();
 							Mavo.data(element, "boundObserver", undefined);
-							$.unbind(element, "input mavo:datachange", handler);
+							$.unbind(element, "input mv-change", handler);
 						});
 					});
 
@@ -6120,7 +6132,6 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
 			init: function init() {
 				if (!this.fromTemplate("dateType")) {
 					var dateFormat = Mavo.DOMExpression.search(this.element, null);
-
 					var datetime = this.element.getAttribute("datetime") || "YYYY-MM-DD";
 
 					for (var type in this.config.dateTypes) {
@@ -6139,23 +6150,23 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
 				}
 			},
 			dateTypes: {
-				"date": /^[Y\d]{4}-[M\d]{2}-[D\d]{2}$/i,
 				"month": /^[Y\d]{4}-[M\d]{2}$/i,
 				"time": /^[H\d]{2}:[M\d]{2}/i,
-				"datetime-local": /^[Y\d]{4}-[M\d]{2}-[D\d]{2} [H\d]{2}:[M\d]{2}/i
+				"datetime-local": /^[Y\d]{4}-[M\d]{2}-[D\d]{2} [H\d]{2}:[Mi\d]{2}/i,
+				"date": /^[Y\d]{4}-[M\d]{2}-[D\d]{2}$/i
 			},
 			defaultFormats: {
-				"date": function date(property) {
-					return "[day(" + property + ")] [month(" + property + ").shortname] [year(" + property + ")]";
+				"date": function date(name) {
+					return "[day(" + name + ")] [month(" + name + ").shortname] [year(" + name + ")]";
 				},
-				"month": function month(property) {
-					return "[month(" + property + ").name] [year(" + property + ")]";
+				"month": function month(name) {
+					return "[month(" + name + ").name] [year(" + name + ")]";
 				},
-				"time": function time(property) {
-					return "[hour(" + property + ").twodigit]:[minute(" + property + ").twodigit]";
+				"time": function time(name) {
+					return "[hour(" + name + ").twodigit]:[minute(" + name + ").twodigit]";
 				},
-				"datetime-local": function datetimeLocal(property) {
-					return "[day(" + property + ")] [month(" + property + ").shortname] [year(" + property + ")]";
+				"datetime-local": function datetimeLocal(name) {
+					return this.date(name) + " " + this.time(name);
 				}
 			},
 			editor: function editor() {
@@ -7750,7 +7761,7 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 				_this.expressions = [];
 
 				// Watch changes and update value
-				document.documentElement.addEventListener("mavo:datachange", function (evt) {
+				document.documentElement.addEventListener("mv-change", function (evt) {
 					if (!_this.active) {
 						return;
 					}
@@ -7839,11 +7850,11 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 				return;
 			}
 
-			if (path === undefined) {
-				path = Mavo.elementPath(node.closest(Mavo.selectors.item), node);
-			}
+			if (attribute && _.directives.indexOf(attribute.name) > -1 || syntax !== Mavo.Expression.Syntax.ESCAPE && syntax.test(attribute ? attribute.value : node.textContent)) {
+				if (path === undefined) {
+					path = Mavo.elementPath(node.closest(Mavo.selectors.item), node);
+				}
 
-			if (attribute && _.directives.indexOf(attribute.name) > -1 || syntax.test(attribute ? attribute.value : node.textContent)) {
 				this.expressions.push(new Mavo.DOMExpression({
 					node: node, syntax: syntax, path: path,
 					attribute: attribute && attribute.name,
@@ -7873,10 +7884,6 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 				node.normalize();
 
 				syntax = Mavo.Expression.Syntax.create(node) || syntax;
-
-				if (syntax === Mavo.Expression.Syntax.ESCAPE) {
-					return;
-				}
 
 				if (Mavo.is("item", node)) {
 					path = [];
@@ -7949,7 +7956,7 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 						// When the element is detached, datachange events from properties
 						// do not propagate up to the group so expressions do not recalculate.
 						// We must do this manually.
-						this.element.addEventListener("mavo:datachange", function (evt) {
+						this.element.addEventListener("mv-change", function (evt) {
 							// Cannot redispatch synchronously [why??]
 							requestAnimationFrame(function () {
 								if (!_this.element.parentNode) {
@@ -8418,6 +8425,8 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 			return new Date();
 		},
 
+		$startup: new Date(), // Like $now, but doesn't update
+
 		get $today() {
 			return _.date(new Date());
 		},
@@ -8432,29 +8441,33 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 		ms: getDateComponent("ms"),
 
 		date: function date(_date) {
-			return _.year(_date) + "-" + _.month(_date).twodigit + "-" + _.day(_date).twodigit;
+			_date = $u.date(_date);
+
+			return _date ? _.year(_date) + "-" + _.month(_date).twodigit + "-" + _.day(_date).twodigit : "";
 		},
 		time: function time(date) {
-			return _.hour(date).twodigit + ":" + _.minute(date).twodigit + ":" + _.second(date).twodigit;
+			date = $u.date(date);
+
+			return date ? _.hour(date).twodigit + ":" + _.minute(date).twodigit + ":" + _.second(date).twodigit : "";
 		},
 
 		minutes: function minutes(seconds) {
-			return Math.floor(Math.abs(seconds) / 60);
+			return Math.floor(Math.abs(seconds) / 60) || 0;
 		},
 		hours: function hours(seconds) {
-			return Math.floor(Math.abs(seconds) / 3600);
+			return Math.floor(Math.abs(seconds) / 3600) || 0;
 		},
 		days: function days(seconds) {
-			return Math.floor(Math.abs(seconds) / 86400);
+			return Math.floor(Math.abs(seconds) / 86400) || 0;
 		},
 		weeks: function weeks(seconds) {
-			return Math.floor(Math.abs(seconds) / 604800);
+			return Math.floor(Math.abs(seconds) / 604800) || 0;
 		},
 		months: function months(seconds) {
-			return Math.floor(Math.abs(seconds) / (30.4368 * 86400));
+			return Math.floor(Math.abs(seconds) / (30.4368 * 86400)) || 0;
 		},
 		years: function years(seconds) {
-			return Math.floor(Math.abs(seconds) / (30.4368 * 86400 * 12));
+			return Math.floor(Math.abs(seconds) / (30.4368 * 86400 * 12)) || 0;
 		},
 
 		localTimezone: -new Date().getTimezoneOffset(),
@@ -8490,6 +8503,39 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 				});
 			},
 
+			fixDateString: function fixDateString(date) {
+				date = date.trim();
+
+				var hasDate = /^\d{4}-\d{2}(-\d{2})?/.test(date);
+				var hasTime = date.indexOf(":") > -1;
+
+				if (!hasDate && !hasTime) {
+					return null;
+				}
+
+				// Fix up time format
+				if (!hasDate) {
+					// No date, add today’s
+					date = _.$today + " " + date;
+				} else {
+					// Only year-month, add day
+					date = date.replace(/^(\d{4}-\d{2})(?!-\d{2})/, "$1-01");
+				}
+
+				if (!hasTime) {
+					// Add a time if one doesn't exist
+					date += "T00:00:00";
+				} else {
+					// Make sure time starts with T, due to Safari bug
+					date = date.replace(/\-(\d{2})\s+(?=\d{2}:)/, "-$1T");
+				}
+
+				// Remove all whitespace
+				date = date.replace(/\s+/g, "");
+
+				return date;
+			},
+
 			date: function date(_date2) {
 				_date2 = val(_date2);
 
@@ -8498,24 +8544,11 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 				}
 
 				if ($.type(_date2) === "string") {
-					_date2 = _date2.trim();
+					_date2 = $u.fixDateString(_date2);
 
-					// Fix up time format
-					if (!/^\d{4}-\d{2}-\d{2}/.test(_date2)) {
-						// No date, add today’s
-						_date2 = _.$today + " " + _date2;
+					if (_date2 === null) {
+						return null;
 					}
-
-					if (_date2.indexOf(":") === -1) {
-						// Add a time if one doesn't exist
-						_date2 += "T00:00:00";
-					} else {
-						// Make sure time starts with T, due to Safari bug
-						_date2 = _date2.replace(/\-(\d{2})\s+(?=\d{2}:)/, "-$1T");
-					}
-
-					// Remove all whitespace
-					_date2 = _date2.replace(/\s+/g, "");
 
 					var timezone = Mavo.match(_date2, /[+-]\d{2}:?\d{2}|Z$/);
 
@@ -9631,7 +9664,7 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 					info: info
 				};
 
-				$.fire(_this7.mavo.element, "mavo:login", { backend: _this7 });
+				$.fire(_this7.mavo.element, "mv-login", { backend: _this7 });
 			});
 		},
 
