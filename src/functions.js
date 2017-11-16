@@ -285,6 +285,8 @@ var _ = Mavo.Functions = {
 		return new Date();
 	},
 
+	$startup: new Date(), // Like $now, but doesn't update
+
 	get $today() {
 		return _.date(new Date());
 	},
@@ -299,18 +301,22 @@ var _ = Mavo.Functions = {
 	ms: getDateComponent("ms"),
 
 	date: date => {
-		return `${_.year(date)}-${_.month(date).twodigit}-${_.day(date).twodigit}`;
+		date = $u.date(date);
+
+		return date? `${_.year(date)}-${_.month(date).twodigit}-${_.day(date).twodigit}` : "";
 	},
 	time: date => {
-		return `${_.hour(date).twodigit}:${_.minute(date).twodigit}:${_.second(date).twodigit}`;
+		date = $u.date(date);
+
+		return date? `${_.hour(date).twodigit}:${_.minute(date).twodigit}:${_.second(date).twodigit}` : "";
 	},
 
-	minutes: seconds => Math.floor(Math.abs(seconds) / 60),
-	hours: seconds => Math.floor(Math.abs(seconds) / 3600),
-	days: seconds => Math.floor(Math.abs(seconds) / 86400),
-	weeks: seconds => Math.floor(Math.abs(seconds) / 604800),
-	months: seconds => Math.floor(Math.abs(seconds) / (30.4368 * 86400)),
-	years: seconds => Math.floor(Math.abs(seconds) / (30.4368 * 86400 * 12)),
+	minutes: seconds => Math.floor(Math.abs(seconds) / 60) || 0,
+	hours: seconds => Math.floor(Math.abs(seconds) / 3600) || 0,
+	days: seconds => Math.floor(Math.abs(seconds) / 86400) || 0,
+	weeks: seconds => Math.floor(Math.abs(seconds) / 604800) || 0,
+	months: seconds => Math.floor(Math.abs(seconds) / (30.4368 * 86400)) || 0,
+	years: seconds => Math.floor(Math.abs(seconds) / (30.4368 * 86400 * 12)) || 0,
 
 	localTimezone: -(new Date()).getTimezoneOffset(),
 
@@ -335,6 +341,41 @@ var _ = Mavo.Functions = {
 			return array.filter(number => !isNaN(number) && val(number) !== "").map(n => +n);
 		},
 
+		fixDateString: function(date) {
+			date = date.trim();
+
+			var hasDate = /^\d{4}-\d{2}(-\d{2})?/.test(date);
+			var hasTime = date.indexOf(":") > -1;
+
+			if (!hasDate && !hasTime) {
+				return null;
+			}
+
+			// Fix up time format
+			if (!hasDate) {
+				// No date, add today’s
+				date = _.$today + " " + date;
+			}
+			else {
+				// Only year-month, add day
+				date = date.replace(/^(\d{4}-\d{2})(?!-\d{2})/, "$1-01");
+			}
+
+			if (!hasTime) {
+				// Add a time if one doesn't exist
+				date += "T00:00:00";
+			}
+			else {
+				// Make sure time starts with T, due to Safari bug
+				date = date.replace(/\-(\d{2})\s+(?=\d{2}:)/, "-$1T");
+			}
+
+			// Remove all whitespace
+			date = date.replace(/\s+/g, "");
+
+			return date;
+		},
+
 		date: function(date) {
 			date = val(date);
 
@@ -343,25 +384,11 @@ var _ = Mavo.Functions = {
 			}
 
 			if ($.type(date) === "string") {
-				date = date.trim();
+				date = $u.fixDateString(date);
 
-				// Fix up time format
-				if (!/^\d{4}-\d{2}-\d{2}/.test(date)) {
-					// No date, add today’s
-					date = _.$today + " " + date;
+				if (date === null) {
+					return null;
 				}
-
-				if (date.indexOf(":") === -1) {
-					// Add a time if one doesn't exist
-					date += "T00:00:00";
-				}
-				else {
-					// Make sure time starts with T, due to Safari bug
-					date = date.replace(/\-(\d{2})\s+(?=\d{2}:)/, "-$1T");
-				}
-
-				// Remove all whitespace
-				date = date.replace(/\s+/g, "");
 
 				var timezone = Mavo.match(date, /[+-]\d{2}:?\d{2}|Z$/);
 

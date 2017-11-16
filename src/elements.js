@@ -346,10 +346,10 @@ _.register({
 				});
 
 				requestAnimationFrame(() => {
-					$.events(element, "input mavo:datachange", function handler() {
+					$.events(element, "input mv-change", function handler() {
 						observer.destroy();
 						Mavo.data(element, "boundObserver", undefined);
-						$.unbind(element, "input mavo:datachange", handler);
+						$.unbind(element, "input mv-change", handler);
 					});
 				});
 
@@ -520,7 +520,6 @@ _.register({
 		init: function() {
 			if (!this.fromTemplate("dateType")) {
 				var dateFormat = Mavo.DOMExpression.search(this.element, null);
-
 				var datetime = this.element.getAttribute("datetime") || "YYYY-MM-DD";
 
 				for (var type in this.config.dateTypes) {
@@ -539,16 +538,18 @@ _.register({
 			}
 		},
 		dateTypes: {
-			"date": /^[Y\d]{4}-[M\d]{2}-[D\d]{2}$/i,
 			"month": /^[Y\d]{4}-[M\d]{2}$/i,
 			"time": /^[H\d]{2}:[M\d]{2}/i,
-			"datetime-local": /^[Y\d]{4}-[M\d]{2}-[D\d]{2} [H\d]{2}:[M\d]{2}/i
+			"datetime-local": /^[Y\d]{4}-[M\d]{2}-[D\d]{2} [H\d]{2}:[Mi\d]{2}/i,
+			"date": /^[Y\d]{4}-[M\d]{2}-[D\d]{2}$/i,
 		},
 		defaultFormats: {
-			"date": property => `[day(${property})] [month(${property}).shortname] [year(${property})]`,
-			"month": property => `[month(${property}).name] [year(${property})]`,
-			"time": property => `[hour(${property}).twodigit]:[minute(${property}).twodigit]`,
-			"datetime-local": property => `[day(${property})] [month(${property}).shortname] [year(${property})]`
+			"date": name => `[day(${name})] [month(${name}).shortname] [year(${name})]`,
+			"month": name => `[month(${name}).name] [year(${name})]`,
+			"time": name => `[hour(${name}).twodigit]:[minute(${name}).twodigit]`,
+			"datetime-local": function(name) {
+				return this.date(name) + " " + this.time(name);
+			}
 		},
 		editor: function() {
 			return {tag: "input", type: this.dateType};
